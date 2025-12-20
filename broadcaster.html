@@ -49,7 +49,7 @@
         let localStream;
         const peerConnections = new Map();
         const dataChannels = new Map();
-        const ws = new WebSocket('ws://localhost:8088'); // Connect to local server
+        const ws = new WebSocket('wss://live-test-a52n.onrender.com'); // Connect to public server
 
         const STUN_SERVERS = {
             iceServers: [
