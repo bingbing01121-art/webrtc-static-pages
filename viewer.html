@@ -29,6 +29,7 @@
 
         let peerConnection;
         let broadcasterId;
+        let username;
         const ws = new WebSocket('wss://live-test-a52n.onrender.com'); // Connect to public server
 
         function log(message) {
@@ -41,11 +42,27 @@
             ws.send(JSON.stringify(message));
         }
 
+        function getUsername() {
+            username = prompt("请输入您的昵称:", `观众${Math.floor(Math.random() * 1000)}`);
+            if (!username) {
+                username = `观众${Math.floor(Math.random() * 1000)}`;
+            }
+            document.querySelector('h1').textContent = `观众端 (${username})`;
+        }
+        
+        getUsername();
+
         // --- WebSocket Event Handling ---
         ws.onopen = () => {
             log('📡 已成功连接到信令服务器。');
-            log('👋 live.audience.join → 作为观众加入直播间');
-            sendMessage({ type: 'register', payload: { role: 'viewer' } });
+            log(`👋 live.audience.join → 作为观众'${username}'加入直播间`);
+            sendMessage({ 
+                type: 'register', 
+                payload: { 
+                    role: 'viewer',
+                    username: username
+                } 
+            });
         };
 
         ws.onerror = (error) => log(`❌ live.error → WebSocket 连接错误: ${error.message || '未知错误'}。`);

@@ -47,8 +47,7 @@
 
         // --- Global State ---
         let localStream;
-        const peerConnections = new Map();
-        const dataChannels = new Map();
+        const viewers = new Map(); // Stores viewerId -> { username, pc, dc }
         const ws = new WebSocket('wss://live-test-a52n.onrender.com'); // Connect to public server
 
         const STUN_SERVERS = {
@@ -68,8 +67,6 @@
         // --- WebSocket Event Handling ---
         ws.onopen = () => {
             log('📡 已成功连接到信令服务器。');
-            // Register as the broadcaster once the media is ready.
-            // This is now handled by the 'startButton'.
         };
 
         ws.onerror = (error) => log(`❌ WebSocket 连接错误: ${error.message || '未知错误'}。`);
@@ -81,19 +78,19 @@
 
             switch (type) {
                 case 'new-viewer':
-                    // A new viewer has connected, create a peer connection for them
-                    createPeerConnection(payload.viewerId);
+                    const { viewerId, username } = payload;
+                    log(`👋 live.audience.join → 观众 '${username}' (${viewerId}) 已加入。`);
+                    viewers.set(viewerId, { username: username });
+                    createPeerConnection(viewerId, username);
                     break;
                 case 'answer':
-                    // Received an answer from a viewer
                     handleAnswer(payload);
                     break;
                 case 'candidate':
-                    // Received an ICE candidate from a viewer
                     handleCandidate(payload);
                     break;
                 case 'viewer-disconnected':
-                    log(`👋 观众 ${payload.viewerId} 已断开连接。`);
+                    log(`👋 live.audience.leave → 观众 ${payload.viewerId} 已断开连接。`);
                     closePeerConnection(payload.viewerId);
                     break;
                 default:
@@ -106,26 +103,26 @@
         }
 
         // --- WebRTC Core Functions ---
-        async function createPeerConnection(viewerId) {
+        async function createPeerConnection(viewerId, username) {
             if (!localStream) {
                 log('❌ 本地媒体流未就绪，无法为观众创建连接。');
                 return;
             }
-            log(`✨ 为新观众 ${viewerId} 创建 PeerConnection...`);
+            log(`✨ 为新观众 '${username}' (${viewerId}) 创建 PeerConnection...`);
 
             const pc = new RTCPeerConnection(STUN_SERVERS);
-            peerConnections.set(viewerId, pc);
+            
+            const viewerInfo = viewers.get(viewerId);
+            viewerInfo.pc = pc;
 
             // Add local stream tracks to the connection
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
             
-            // Create data channel for this viewer
             const dc = pc.createDataChannel('chat');
-            dc.onopen = () => log(`💬 与观众 ${viewerId} 的数据通道已开启。`);
-            dc.onclose = () => log(`💬 与观众 ${viewerId} 的数据通道已关闭。`);
-            dataChannels.set(viewerId, dc);
+            dc.onopen = () => log(`💬 与观众 '${username}' 的数据通道已开启。`);
+            dc.onclose = () => log(`💬 与观众 '${username}' 的数据通道已关闭。`);
+            viewerInfo.dc = dc;
 
-            // Handle ICE candidates
             pc.onicecandidate = event => {
                 if (event.candidate) {
                     sendMessage({
@@ -139,14 +136,13 @@
             };
             
             pc.onconnectionstatechange = () => {
-                log(`🔄 与观众 ${viewerId} 的连接状态: ${pc.connectionState}`);
+                log(`🔄 与观众 '${username}' 的连接状态: ${pc.connectionState}`);
             };
 
-            // Create and send offer
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
 
-            log(`⬆️ 为观众 ${viewerId} 发送 Offer...`);
+            log(`⬆️ 为观众 '${username}' 发送 Offer...`);
             sendMessage({
                 type: 'offer',
                 payload: {
@@ -158,31 +154,27 @@
         
         function handleAnswer(payload) {
             const { senderId, answer } = payload;
-            const pc = peerConnections.get(senderId);
-            if (pc) {
-                log(`🤝 收到观众 ${senderId} 的 Answer，正在设置远端描述...`);
-                pc.setRemoteDescription(new RTCSessionDescription(answer));
+            const viewerInfo = viewers.get(senderId);
+            if (viewerInfo && viewerInfo.pc) {
+                log(`🤝 收到观众 '${viewerInfo.username}' 的 Answer，正在设置远端描述...`);
+                viewerInfo.pc.setRemoteDescription(new RTCSessionDescription(answer));
             }
         }
 
         function handleCandidate(payload) {
             const { senderId, candidate } = payload;
-            const pc = peerConnections.get(senderId);
-            if (pc) {
-                log(`📍 收到观众 ${senderId} 的 ICE Candidate，正在添加...`);
-                pc.addIceCandidate(new RTCIceCandidate(candidate));
+            const viewerInfo = viewers.get(senderId);
+            if (viewerInfo && viewerInfo.pc) {
+                log(`📍 收到观众 '${viewerInfo.username}' 的 ICE Candidate，正在添加...`);
+                viewerInfo.pc.addIceCandidate(new RTCIceCandidate(candidate));
             }
         }
 
         function closePeerConnection(viewerId) {
-            const pc = peerConnections.get(viewerId);
-            if (pc) {
-                pc.close();
-                peerConnections.delete(viewerId);
-            }
-            const dc = dataChannels.get(viewerId);
-            if (dc) {
-                dataChannels.delete(viewerId);
+            const viewerInfo = viewers.get(viewerId);
+            if (viewerInfo) {
+                if (viewerInfo.pc) viewerInfo.pc.close();
+                viewers.delete(viewerId);
             }
         }
 
@@ -192,26 +184,25 @@
                 try {
                     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                     localVideo.srcObject = localStream;
-                    log('✅ 摄像头和麦克风已就绪。');
+                    log('✅ live.ready → 直播初始化完成，摄像头和麦克风已就绪。');
                 } catch (e) {
                     log(`❌ 获取媒体设备失败: ${e.toString()}。`);
                     alert('无法访问摄像头或麦克风，请检查浏览器权限设置。');
                     return;
                 }
             }
-            log('▶️ 开始直播，正在向信令服务器注册...');
-            sendMessage({ type: 'register', payload: { role: 'broadcaster' } });
+            log('▶️ live.start → 开始直播，正在向信令服务器注册...');
+            sendMessage({ type: 'register', payload: { role: 'broadcaster', username: '主播' } });
             startButton.disabled = true;
             stopButton.disabled = false;
         };
 
         stopButton.onclick = () => {
-            log('⏹️ 直播结束，正在关闭所有连接...');
-            peerConnections.forEach((pc, viewerId) => {
+            log('⏹️ live.stop → 直播结束，正在关闭所有连接...');
+            viewers.forEach((viewer, viewerId) => {
                 closePeerConnection(viewerId);
-
             });
-            sendMessage({type: 'stop-broadcasting'}); // Notify server
+            sendMessage({type: 'stop-broadcasting'});
             ws.close();
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
@@ -226,9 +217,9 @@
         function broadcastDataChannelMessage(type, payload) {
             const message = JSON.stringify({ type, payload });
             log(`📤 (广播数据通道消息) ${type}`);
-            dataChannels.forEach(dc => {
-                if (dc.readyState === 'open') {
-                    dc.send(message);
+            viewers.forEach(viewer => {
+                if (viewer.dc && viewer.dc.readyState === 'open') {
+                    viewer.dc.send(message);
                 }
             });
         }
