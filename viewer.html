@@ -12,17 +12,18 @@
 <body>
     <h1>观众端 (Viewer)</h1>
     <video id="remoteVideo" autoplay playsinline></video>
+    <button id="playRemoteButton" style="display:none; margin-top: 10px; padding: 10px 20px;">点击播放直播</button>
     <h3>事件日志:</h3>
     <div id="logs"></div>
 
     <script>
         const remoteVideo = document.getElementById('remoteVideo');
+        const playRemoteButton = document.getElementById('playRemoteButton');
         const logs = document.getElementById('logs');
 
         function log(message) {
             console.log(message);
-            logs.innerHTML += `[${new Date().toLocaleTimeString()}] ${message}
-`;
+            logs.innerHTML += `[${new Date().toLocaleTimeString()}] ${message}\n`;
             logs.scrollTop = logs.scrollHeight;
         }
 
@@ -32,25 +33,20 @@
         // --- WebSocket 事件处理 ---
         ws.onopen = () => {
             log('📡 已成功连接到信令服务器。');
-            // 观众端连接信令服务器时，可以发送一个“观众加入”的事件
-            // ws.send(JSON.stringify({ type: 'live.audience.join', user: '观众_User123' }));
         };
         ws.onerror = (error) => log(`❌ WebSocket 连接错误: ${error.message || '未知错误'}。请确认信令服务器是否已启动。`);
         
         ws.onmessage = async event => {
-            // 观众端主要接收主播发来的 Offer 和 ICE Candidate
             const message = JSON.parse(event.data);
             log(`📩 收到信令消息: ${message.type}`);
 
             if (message.type === 'offer' && !peerConnection) {
-                // 收到主播的 Offer，且尚未创建 PeerConnection
                 log('🤝 收到主播的 Offer，正在创建 PeerConnection 和 Answer...');
                 peerConnection = new RTCPeerConnection({
                     iceServers: [{urls: 'stun:stun.l.google.com:19302'}] // 使用相同的 STUN 服务器
                 });
 
-                // --- PeerConnection 事件处理 ---
-
+                // ... (rest of peerConnection event handlers)
                 // 监听网络连接状态变化
                 peerConnection.onconnectionstatechange = () => {
                     log(`🔄 live.connection.change → PeerConnection 状态: ${peerConnection.connectionState}`);
@@ -73,13 +69,13 @@
 
                 // 监听主播发来的媒体流 (video/audio tracks)
                 peerConnection.ontrack = event => {
-                    log('▶️ live.play → 收到远程媒体流，开始播放直播。');
+                    log('▶️ live.play → 收到远程媒体流，准备播放直播。');
                     log(`ontrack event: ${JSON.stringify(event.streams.map(s => s.id))}, tracks: ${JSON.stringify(event.track.id)}`);
                     if (event.streams && event.streams[0]) {
                         if (remoteVideo.srcObject !== event.streams[0]) {
                             remoteVideo.srcObject = event.streams[0];
-                            remoteVideo.play(); // Explicitly play the video
-                            log('✅ remoteVideo.srcObject 已设置并尝试播放。');
+                            playRemoteButton.style.display = 'block'; // Show play button
+                            log('✅ remoteVideo.srcObject 已设置，请点击播放按钮。');
                         } else {
                             log('ℹ️ remoteVideo.srcObject 已经设置，无需重复。');
                         }
@@ -126,7 +122,19 @@
                 }
             } else if (message.type === 'live.audience.join') {
                 // 如果需要，可以在这里处理观众加入的消息
-                // log(`👨‍👩‍👧‍👦 收到观众加入消息：${message.user}`);
+            }
+        };
+
+        playRemoteButton.onclick = () => {
+            if (remoteVideo.srcObject) {
+                remoteVideo.play().then(() => {
+                    log('▶️ 直播已开始播放。');
+                    playRemoteButton.style.display = 'none'; // Hide button after playing
+                }).catch(error => {
+                    log(`❌ 播放失败: ${error.message}`);
+                });
+            } else {
+                log('ℹ️ 视频流尚未准备好。');
             }
         };
     </script>
