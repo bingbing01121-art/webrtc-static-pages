@@ -78,7 +78,8 @@
                     if (event.streams && event.streams[0]) {
                         if (remoteVideo.srcObject !== event.streams[0]) {
                             remoteVideo.srcObject = event.streams[0];
-                            log('✅ remoteVideo.srcObject 已设置。');
+                            remoteVideo.play(); // Explicitly play the video
+                            log('✅ remoteVideo.srcObject 已设置并尝试播放。');
                         } else {
                             log('ℹ️ remoteVideo.srcObject 已经设置，无需重复。');
                         }
