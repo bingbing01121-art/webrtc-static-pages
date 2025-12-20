@@ -18,6 +18,10 @@
         <button id="playButton" style="display:none;">播放</button>
         <button id="pauseButton" style="display:none;">暂停 (live.pause)</button>
     </div>
+    <div class="controls">
+        <input type="text" id="chatInput" placeholder="输入弹幕...">
+        <button id="sendChatButton">发送弹幕</button>
+    </div>
     <h3>事件日志:</h3>
     <div id="logs"></div>
 
@@ -26,10 +30,13 @@
         const playButton = document.getElementById('playButton');
         const pauseButton = document.getElementById('pauseButton');
         const logs = document.getElementById('logs');
+        const chatInput = document.getElementById('chatInput');
+        const sendChatButton = document.getElementById('sendChatButton');
 
         let peerConnection;
         let broadcasterId;
         let username;
+        let dataChannel;
         const ws = new WebSocket('wss://live-test-a52n.onrender.com'); // Connect to public server
 
         function log(message) {
@@ -85,6 +92,10 @@
                     break;
                 case 'candidate':
                     handleCandidate(payload);
+                    break;
+                case 'kicked':
+                    log(`👢 ${payload.reason}`);
+                    ws.close();
                     break;
                 case 'broadcaster-disconnected':
                     log('🛑 主播已断开连接，直播结束。');
@@ -143,15 +154,28 @@
             };
 
             peerConnection.ondatachannel = event => {
-                const dataChannel = event.channel;
+                dataChannel = event.channel;
                 dataChannel.onmessage = e => {
                     const msg = JSON.parse(e.data);
                     switch(msg.type) {
-                        case 'live.chat.message': log(`💬 live.chat.message → [${msg.payload.user}] ${msg.payload.text}`); break;
-                        case 'live.like': log(`👍 live.like → 收到来自 ${msg.payload.user} 的点赞`); break;
-                        case 'live.gift.send': log(`🎁 live.gift.receive → 收到来自 ${msg.payload.user} 的礼物 [${msg.payload.gift}]`); break;
-                        case 'live.anchor.mute': log('🔇 live.anchor.mute → 主播已静音'); break;
-                        case 'live.anchor.unmute': log('🔊 live.anchor.unmute → 主播已取消静音'); break;
+                        case 'live.chat.message': 
+                            log(`💬 live.chat.message → [${msg.payload.user}] ${msg.payload.text}`); 
+                            break;
+                        case 'live.like': 
+                            log(`👍 live.like → 收到来自 ${msg.payload.user} 的点赞`); 
+                            break;
+                        case 'live.gift.send': 
+                            log(`🎁 live.gift.receive → 收到来自 ${msg.payload.user} 的礼物 [${msg.payload.gift}]`); 
+                            break;
+                        case 'live.anchor.mute': 
+                            log('🔇 live.anchor.mute → 主播已静音'); 
+                            break;
+                        case 'live.anchor.unmute': 
+                            log('🔊 live.anchor.unmute → 主播已取消静音'); 
+                            break;
+                        case 'moderation':
+                            handleModeration(msg.payload);
+                            break;
                     }
                 };
                 dataChannel.onopen = () => log('💬 数据通道已开启。');
@@ -183,6 +207,18 @@
             }
         }
 
+        function handleModeration(payload) {
+            if (payload.action === 'mute-chat') {
+                log('🚫 live.chat.moderation → 您已被主播禁言。');
+                chatInput.disabled = true;
+                sendChatButton.disabled = true;
+            } else if (payload.action === 'unmute-chat') {
+                log('✅ live.chat.moderation → 您已被主播解除禁言。');
+                chatInput.disabled = false;
+                sendChatButton.disabled = false;
+            }
+        }
+
         // --- UI Event Handlers ---
         playButton.onclick = () => {
             if (remoteVideo.srcObject) {
@@ -205,6 +241,20 @@
                 remoteVideo.play();
                 log('▶️ live.play → 直播已恢复播放。');
                 pauseButton.textContent = '暂停 (live.pause)';
+            }
+        };
+        
+        sendChatButton.onclick = () => {
+            if (chatInput.value && dataChannel && dataChannel.readyState === 'open') {
+                const message = {
+                    type: 'live.chat.message',
+                    payload: { user: username, text: chatInput.value }
+                };
+                dataChannel.send(JSON.stringify(message));
+                log(`💬 (我) ${chatInput.value}`);
+                chatInput.value = '';
+            } else {
+                log('❌ 无法发送消息，数据通道未开启或输入为空。');
             }
         };
     </script>

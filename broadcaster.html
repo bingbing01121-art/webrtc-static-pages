@@ -4,13 +4,15 @@
     <title>主播端 (Broadcaster)</title>
     <style>
         body { font-family: sans-serif; padding: 20px; background-color: #f0f2f5; color: #333; }
-        h1 { color: #1a73e8; }
+        h1, h3 { color: #1a73e8; }
         video { border: 2px solid #ccc; border-radius: 8px; width: 520px; height: 390px; background: #000; display: block; margin-bottom: 15px;}
         .controls button, .controls input { margin: 5px; padding: 10px 15px; border-radius: 5px; border: none; cursor: pointer; font-size: 14px; }
         .controls button { background-color: #1a73e8; color: white; }
         .controls button:hover { background-color: #155ab6; }
         .controls input { border: 1px solid #ccc; padding: 9px; }
-        #logs { white-space: pre-wrap; font-family: monospace; background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 5px; max-height: 300px; overflow-y: auto; margin-top: 20px; }
+        #logs, #viewer-list-container { white-space: pre-wrap; font-family: monospace; background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 5px; max-height: 300px; overflow-y: auto; margin-top: 20px; }
+        .viewer-item { display: flex; justify-content: space-between; align-items: center; padding: 5px; border-bottom: 1px solid #eee; }
+        .viewer-item button { font-size: 12px; padding: 5px 8px; background-color: #e84118; }
     </style>
 </head>
 <body>
@@ -29,6 +31,12 @@
         <input type="text" id="chatInput" placeholder="输入弹幕...">
         <button id="sendChatButton">发送弹幕</button>
     </div>
+
+    <h3>在线观众:</h3>
+    <div id="viewer-list-container">
+        <div id="viewer-list"></div>
+    </div>
+
     <h3>事件日志:</h3>
     <div id="logs"></div>
 
@@ -44,6 +52,7 @@
         const chatInput = document.getElementById('chatInput');
         const sendChatButton = document.getElementById('sendChatButton');
         const logs = document.getElementById('logs');
+        const viewerListDiv = document.getElementById('viewer-list');
 
         // --- Global State ---
         let localStream;
@@ -57,11 +66,31 @@
             ]
         };
 
-        // --- Logging ---
+        // --- Logging & UI Update ---
         function log(message) {
             console.log(message);
             logs.innerHTML += `[${new Date().toLocaleTimeString()}] ${message}\n`;
             logs.scrollTop = logs.scrollHeight;
+        }
+
+        function updateViewerList() {
+            viewerListDiv.innerHTML = '';
+            if(viewers.size === 0) {
+                viewerListDiv.innerHTML = '暂无观众';
+                return;
+            }
+            viewers.forEach((viewer, viewerId) => {
+                const item = document.createElement('div');
+                item.className = 'viewer-item';
+                item.innerHTML = `
+                    <span>${viewer.username} (${viewerId.substring(0, 4)})</span>
+                    <div>
+                        <button class="mute-btn" data-id="${viewerId}">禁言</button>
+                        <button class="kick-btn" data-id="${viewerId}">踢人</button>
+                    </div>
+                `;
+                viewerListDiv.appendChild(item);
+            });
         }
 
         // --- WebSocket Event Handling ---
@@ -81,6 +110,7 @@
                     const { viewerId, username } = payload;
                     log(`👋 live.audience.join → 观众 '${username}' (${viewerId}) 已加入。`);
                     viewers.set(viewerId, { username: username });
+                    updateViewerList();
                     createPeerConnection(viewerId, username);
                     break;
                 case 'answer':
@@ -90,8 +120,68 @@
                     handleCandidate(payload);
                     break;
                 case 'viewer-disconnected':
-                    log(`👋 live.audience.leave → 观众 ${payload.viewerId} 已断开连接。`);
+                    const disconnectedViewer = viewers.get(payload.viewerId);
+                    log(`👋 live.audience.leave → 观众 '${disconnectedViewer ? disconnectedViewer.username : payload.viewerId}' 已断开连接。`);
                     closePeerConnection(payload.viewerId);
+                    updateViewerList();
+                    break;
+                default:
+                    log(`⚠️ 未知消息类型: ${type}`);
+            }
+        };
+
+        function updateViewerList() {
+            viewerListDiv.innerHTML = '';
+            if(viewers.size === 0) {
+                viewerListDiv.innerHTML = '暂无观众';
+                return;
+            }
+            viewers.forEach((viewer, viewerId) => {
+                const item = document.createElement('div');
+                item.className = 'viewer-item';
+                const muteButtonText = viewer.isMuted ? '解除禁言' : '禁言';
+                item.innerHTML = `
+                    <span>${viewer.username} (${viewerId.substring(0, 4)})</span>
+                    <div>
+                        <button class="mute-btn" data-id="${viewerId}">${muteButtonText}</button>
+                        <button class="kick-btn" data-id="${viewerId}">踢人</button>
+                    </div>
+                `;
+                viewerListDiv.appendChild(item);
+            });
+        }
+
+        // --- WebSocket Event Handling ---
+        ws.onopen = () => {
+            log('📡 已成功连接到信令服务器。');
+        };
+
+        ws.onerror = (error) => log(`❌ WebSocket 连接错误: ${error.message || '未知错误'}。`);
+
+        ws.onmessage = async event => {
+            const message = JSON.parse(event.data);
+            const { type, payload } = message;
+            log(`📩 收到信令消息: ${type}`);
+
+            switch (type) {
+                case 'new-viewer':
+                    const { viewerId, username } = payload;
+                    log(`👋 live.audience.join → 观众 '${username}' (${viewerId}) 已加入。`);
+                    viewers.set(viewerId, { username: username, isMuted: false });
+                    updateViewerList();
+                    createPeerConnection(viewerId, username);
+                    break;
+                case 'answer':
+                    handleAnswer(payload);
+                    break;
+                case 'candidate':
+                    handleCandidate(payload);
+                    break;
+                case 'viewer-disconnected':
+                    const disconnectedViewer = viewers.get(payload.viewerId);
+                    log(`👋 live.audience.leave → 观众 '${disconnectedViewer ? disconnectedViewer.username : payload.viewerId}' 已断开连接。`);
+                    closePeerConnection(payload.viewerId);
+                    updateViewerList();
                     break;
                 default:
                     log(`⚠️ 未知消息类型: ${type}`);
@@ -101,7 +191,7 @@
         function sendMessage(message) {
             ws.send(JSON.stringify(message));
         }
-
+        
         // --- WebRTC Core Functions ---
         async function createPeerConnection(viewerId, username) {
             if (!localStream) {
@@ -115,22 +205,24 @@
             const viewerInfo = viewers.get(viewerId);
             viewerInfo.pc = pc;
 
-            // Add local stream tracks to the connection
             localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
             
             const dc = pc.createDataChannel('chat');
             dc.onopen = () => log(`💬 与观众 '${username}' 的数据通道已开启。`);
             dc.onclose = () => log(`💬 与观众 '${username}' 的数据通道已关闭。`);
+            dc.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'live.chat.message') {
+                    log(`💬 [${msg.payload.user}]: ${msg.payload.text}`);
+                }
+            };
             viewerInfo.dc = dc;
 
             pc.onicecandidate = event => {
                 if (event.candidate) {
                     sendMessage({
                         type: 'candidate',
-                        payload: {
-                            targetId: viewerId,
-                            candidate: event.candidate
-                        }
+                        payload: { targetId: viewerId, candidate: event.candidate }
                     });
                 }
             };
@@ -145,10 +237,7 @@
             log(`⬆️ 为观众 '${username}' 发送 Offer...`);
             sendMessage({
                 type: 'offer',
-                payload: {
-                    targetId: viewerId,
-                    offer: offer
-                }
+                payload: { targetId: viewerId, offer: offer }
             });
         }
         
@@ -201,7 +290,8 @@
             log('⏹️ live.stop → 直播结束，正在关闭所有连接...');
             viewers.forEach((viewer, viewerId) => {
                 closePeerConnection(viewerId);
-            });
+});
+            updateViewerList();
             sendMessage({type: 'stop-broadcasting'});
             ws.close();
             if (localStream) {
@@ -247,6 +337,45 @@
 
         // Initial state
         stopButton.disabled = true;
+        updateViewerList();
+
+        // --- Moderation Event Handling ---
+        viewerListDiv.addEventListener('click', (event) => {
+            const target = event.target;
+            const viewerId = target.dataset.id;
+            if (!viewerId) return;
+
+            const viewerInfo = viewers.get(viewerId);
+            if (!viewerInfo) return;
+
+            if (target.classList.contains('kick-btn')) {
+                if (confirm(`确定要将观众 ${viewerInfo.username} 踢出直播间吗？`)) {
+                    log(`👢 正在请求服务器将观众 ${viewerId} 踢出...`);
+                    sendMessage({
+                        type: 'kick-user',
+                        payload: { targetId: viewerId }
+                    });
+                }
+            } else if (target.classList.contains('mute-btn')) {
+                // Toggle mute state
+                viewerInfo.isMuted = !viewerInfo.isMuted;
+                
+                const action = viewerInfo.isMuted ? 'mute-chat' : 'unmute-chat';
+                log(`💬 正在向观众 ${viewerInfo.username} 发送 '${action}' 命令...`);
+
+                if (viewerInfo.dc && viewerInfo.dc.readyState === 'open') {
+                    viewerInfo.dc.send(JSON.stringify({
+                        type: 'moderation',
+                        payload: { action: action }
+                    }));
+                } else {
+                    log(`❌ 与观众 ${viewerInfo.username} 的数据通道未开启，无法发送禁言命令。`);
+                }
+                
+                // Refresh the list to update button text
+                updateViewerList();
+            }
+        });
     </script>
 </body>
 </html>
