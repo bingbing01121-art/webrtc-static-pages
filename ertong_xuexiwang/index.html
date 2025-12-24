@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>儿童多语言学习乐园</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <header>
+        <h1>儿童多语言学习乐园</h1>
+        <div class="language-selector">
+            选择发音语言：
+            <select id="pronunciation-lang">
+                <option value="zh-CN">中文</option>
+                <option value="en-US">英文</option>
+                <option value="km-KH">高棉语</option>
+            </select>
+        </div>
+    </header>
+
+    <main>
+        <nav class="tabs">
+            <button class="tab-button active" data-module="numbers">数字学习</button>
+            <button class="tab-button" data-module="english">英文单词</button>
+            <button class="tab-button" data-module="khmer">高棉语</button>
+        </nav>
+
+        <section id="module-numbers" class="learning-module active">
+            <h2>学习卡片：认识数字</h2>
+            <div id="learning-cards-numbers" class="card-container"></div>
+        </section>
+
+        <section id="module-english" class="learning-module hidden">
+            <h2>学习卡片：英文单词</h2>
+            <div id="learning-cards-english" class="card-container"></div>
+        </section>
+
+        <section id="module-khmer" class="learning-module hidden">
+            <h2>学习卡片：高棉语</h2>
+            <div id="learning-cards-khmer" class="card-container"></div>
+        </section>
+
+        <section id="quiz-section">
+            <h2>小测验：你学会了吗？</h2>
+            <div id="quiz-container">
+                <button id="start-quiz-btn">开始测验</button>
+            </div>
+            <div id="quiz-area" class="hidden">
+                <!-- 测验内容将由JavaScript动态生成 -->
+            </div>
+        </section>
+
+        <section id="reward-section" class="hidden">
+            <h2>太棒了！</h2>
+            <p>你完成了所有的测验！</p>
+            <div id="reward-animation">🎉</div>
+        </section>
+    </main>
+
+    <script src="js/main.js"></script>
+</body>
+</html>
