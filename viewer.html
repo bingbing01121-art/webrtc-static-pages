@@ -183,10 +183,9 @@
                                 }
                                 ws.send(JSON.stringify({ type: 'list-rooms' }));
                                 break;
-                            case 'room-list':
-                                renderRoomList(message.payload);
-                                break;
-                            case 'joined-room':
+                                            case 'room-list':
+                                                renderRoomList(message.payload.rooms); // Access the 'rooms' array within the payload
+                                                break;                            case 'joined-room':
                                 currentRoomId = message.payload.roomId;
                                 log(`✅ 成功加入房间 ${currentRoomId.substring(0,4)}`);
                                 showInCallView();
