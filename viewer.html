@@ -84,6 +84,7 @@
         let broadcasterId = null;
         let currentRoomId = null;
         let isMuted = false; // New state for mute status
+        let iceServersConfig = [{ urls: 'stun:stun.l.google.com:19302' }]; // Default or received from server
 
         // --- UI State Management ---
         function showRoomSelection() {
@@ -146,7 +147,7 @@
         }
 
         // --- Signaling & Actions ---
-        const ws = new WebSocket('wss://live-test-a52n.onrender.com');
+        const ws = new WebSocket('wss://live-test-stai.onrender.com');
 
         ws.onopen = () => {
             console.log('📡 连接到信令服务器。');
@@ -162,6 +163,10 @@
 
             switch (message.type) {
                 case 'registered':
+                    if (message.payload.iceServers) {
+                        iceServersConfig = message.payload.iceServers;
+                        console.log(`🧊 收到ICE服务器配置。`);
+                    }
                     ws.send(JSON.stringify({ type: 'list-rooms' }));
                     break;
                 case 'room-list':
@@ -235,7 +240,7 @@
             broadcasterId = payload.senderId;
             log(`🤝 收到来自主播 ${broadcasterId.substring(0,4)} 的 Offer...`);
 
-            peerConnection = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            peerConnection = new RTCPeerConnection({ iceServers: iceServersConfig });
             peerConnection.onicecandidate = e => {
                 if (e.candidate) {
                     ws.send(JSON.stringify({ type: 'candidate', payload: { targetId: broadcasterId, candidate: e.candidate }}));

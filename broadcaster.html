@@ -85,6 +85,7 @@
         let roomInfo = {};
         let mutedViewersLocal = new Set(); // Local set of muted viewer persistentIds
         let isAnchorMuted = false; // New state for anchor's own mute status
+        let iceServersConfig = [{ urls: 'stun:stun.l.google.com:19302' }]; // Default or received from server
 
         // --- Logging ---
         function log(message) {
@@ -128,7 +129,7 @@
         }
 
         // --- Signaling Server Connection ---
-        const ws = new WebSocket('wss://live-test-a52n.onrender.com');
+        const ws = new WebSocket('wss://live-test-stai.onrender.com');
 
         ws.onopen = () => {
             log('📡 连接到信令服务器。');
@@ -162,6 +163,10 @@
             switch (message.type) {
                 case 'registered':
                     log(`✍️  用户注册成功 (ID: ${message.payload.userId.substring(0,4)})`);
+                    if (message.payload.iceServers) {
+                        iceServersConfig = message.payload.iceServers;
+                        log(`🧊 收到ICE服务器配置。`);
+                    }
                     break;
                 case 'room-created':
                     roomInfo = { id: message.payload.roomId, name: message.payload.roomName };
@@ -196,7 +201,7 @@
             
             if (!localStream) return log('⚠️ 主播尚未开播!');
 
-            const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            const pc = new RTCPeerConnection({ iceServers: iceServersConfig });
             pc.clientInfo = { id: viewerId, username: username }; // Attach info to PC object
             peerConnections.set(viewerId, pc);
 
