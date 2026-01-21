@@ -39,6 +39,7 @@
 
         <div class="controls" id="roomCreationControls">
             <input type="text" id="roomNameInput" placeholder="输入房间名...">
+            <input type="password" id="passwordInput" placeholder="输入房间密码 (可选)...">
             <button id="createRoomButton">创建并开始直播</button>
         </div>
         
@@ -70,6 +71,7 @@
         const roomCreationControls = document.getElementById('roomCreationControls');
         const inCallControls = document.getElementById('inCallControls');
         const roomNameInput = document.getElementById('roomNameInput');
+        const passwordInput = document.getElementById('passwordInput'); // New: Password input element
         const createRoomButton = document.getElementById('createRoomButton');
         const stopButton = document.getElementById('stopButton');
         const chatInput = document.getElementById('chatInput');
@@ -290,9 +292,10 @@
                 if (!localStream) return alert('无法访问摄像头或麦克风，请检查权限。');
             }
             const roomName = roomNameInput.value;
+            const password = passwordInput.value; // Get password from input
             if (!roomName) return alert('请输入房间名!');
             
-            ws.send(JSON.stringify({ type: 'create-room', payload: { roomName } }));
+            ws.send(JSON.stringify({ type: 'create-room', payload: { roomName, password } })); // Include password in payload
         };
 
         stopButton.onclick = () => {
