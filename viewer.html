@@ -140,69 +140,97 @@
             }
             rooms.forEach(room => {
                 const li = document.createElement('li');
-                li.innerHTML = `<div><strong>${room.roomName}</strong> <br><small>主播: ${room.broadcasterName} | 观众: ${room.viewerCount}</small></div>
-                              <button onclick="joinRoom('${room.roomId}')" style="background-color: #28a745;">加入</button>`;
-                roomList.appendChild(li);
-            });
-        }
-
-        // --- Signaling & Actions ---
-        const ws = new WebSocket('wss://live-test-stai.onrender.com');
-
-        ws.onopen = () => {
-            console.log('📡 连接到信令服务器。');
-            ws.send(JSON.stringify({
-                type: 'register',
-                payload: { persistentId: userInfo.persistentId, username: userInfo.username }
-            }));
-        };
-
-        ws.onmessage = async event => {
-            const message = JSON.parse(event.data);
-            console.log(`📩 [server] → ${message.type}`);
-
-            switch (message.type) {
-                case 'registered':
-                    if (message.payload.iceServers) {
-                        iceServersConfig = message.payload.iceServers;
-                        console.log(`🧊 收到ICE服务器配置。`);
+                const passwordIcon = room.isPasswordProtected ? '<span style="margin-left: 5px;">&#128274;</span>' : ''; // Lock icon
+                li.innerHTML = `<div><strong>${room.roomName}${passwordIcon}</strong> <br><small>主播: ${room.broadcasterName} | 观众: ${room.viewerCount}</small></div>
+                              <button onclick="handleJoinRoomClick('${room.roomId}', ${room.isPasswordProtected})" style="background-color: #28a745;">加入</button>`;
+                            roomList.appendChild(li);
+                        });
                     }
-                    ws.send(JSON.stringify({ type: 'list-rooms' }));
-                    break;
-                case 'room-list':
-                    renderRoomList(message.payload);
-                    break;
-                case 'joined-room':
-                    currentRoomId = message.payload.roomId;
-                    log(`✅ 成功加入房间 ${currentRoomId.substring(0,4)}`);
-                    showInCallView();
-                    break;
-                case 'offer':
-                    handleOffer(message.payload);
-                    break;
-                case 'candidate':
-                    handleCandidate(message.payload);
-                    break;
-                case 'room-closed':
-                    alert(`房间已关闭。`);
-                    cleanupConnection();
-                    showRoomSelection();
-                    break;
-                case 'kicked':
-                    alert(`你已被主播移出房间。`);
-                    cleanupConnection();
-                    showRoomSelection();
-                    break;
-                case 'viewer-muted-status':
-                    handleViewerMutedStatus(message.payload);
-                    break;
-            }
-        };
-        
-        function joinRoom(roomId) {
-            ws.send(JSON.stringify({ type: 'join-room', payload: { roomId } }));
-        }
-
+                
+                    // 处理加入房间按钮点击事件，根据需要提示密码
+                    function handleJoinRoomClick(roomId, isPasswordProtected) {
+                        let password = null;
+                        if (isPasswordProtected) {
+                            password = prompt("请输入房间密码:");
+                            if (password === null) { // 用户取消了提示
+                                log("🚫 用户取消加入房间。");
+                                return;
+                            }
+                        }
+                        joinRoom(roomId, password); // 调用 joinRoom 并传递密码（或 null）
+                    }
+                
+                    // --- Signaling & Actions ---
+                    const ws = new WebSocket('wss://live-test-stai.onrender.com');
+                
+                    ws.onopen = () => {
+                        console.log('📡 连接到信令服务器。');
+                        ws.send(JSON.stringify({
+                            type: 'register',
+                            payload: { persistentId: userInfo.persistentId, username: userInfo.username }
+                        }));
+                    };
+                
+                    ws.onmessage = async event => {
+                        const message = JSON.parse(event.data);
+                        console.log(`📩 [server] → ${message.type}`);
+                
+                        switch (message.type) {
+                            case 'registered':
+                                if (message.payload.iceServers) {
+                                    iceServersConfig = message.payload.iceServers;
+                                    console.log(`🧊 收到ICE服务器配置。`);
+                                }
+                                ws.send(JSON.stringify({ type: 'list-rooms' }));
+                                break;
+                            case 'room-list':
+                                renderRoomList(message.payload);
+                                break;
+                            case 'joined-room':
+                                currentRoomId = message.payload.roomId;
+                                log(`✅ 成功加入房间 ${currentRoomId.substring(0,4)}`);
+                                showInCallView();
+                                break;
+                            case 'offer':
+                                handleOffer(message.payload);
+                                break;
+                            case 'candidate':
+                                handleCandidate(message.payload);
+                                break;
+                            case 'room-closed':
+                                alert(`房间已关闭。`);
+                                cleanupConnection();
+                                showRoomSelection();
+                                break;
+                            case 'kicked':
+                                alert(`你已被主播移出房间。`);
+                                cleanupConnection();
+                                showRoomSelection();
+                                break;
+                                            case 'viewer-muted-status':
+                                                handleViewerMutedStatus(message.payload);
+                                                break;
+                                            case 'error': // Handle error messages from the server
+                                                if (message.payload && message.payload.code === 'PASSWORD_INCORRECT') {
+                                                    alert("密码不正确，请重新输入。");
+                                                } else if (message.payload && message.payload.message) {
+                                                    alert(`错误: ${message.payload.message}`);
+                                                } else {
+                                                    alert("发生未知错误。");
+                                                }
+                                                // For room joining errors, ensure we stay on the room selection view
+                                                if (currentRoomId && (message.payload.code === 'PASSWORD_INCORRECT' || message.payload.code === 'ROOM_NOT_FOUND')) {
+                                                    // If an error occurred after trying to join, clear selected room and show selection view
+                                                    currentRoomId = null;
+                                                    peerConnection = null; // Also clear peerConnection
+                                                    showRoomSelection();
+                                                }
+                                                break;
+                                        }                    };
+                    
+                    function joinRoom(roomId, password) { // Modified to accept password
+                        ws.send(JSON.stringify({ type: 'join-room', payload: { roomId, password } })); // Modified to send password
+                    }
         function leaveRoom() {
             if (currentRoomId) {
                 ws.send(JSON.stringify({ type: 'leave-room' }));
